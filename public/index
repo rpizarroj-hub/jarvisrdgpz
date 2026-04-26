@@ -1,0 +1,1430 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JARVIS — Sistema de Asistencia</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --primary: #00d4ff;
+            --primary-dark: #0099cc;
+            --accent: #ff6b35;
+            --bg-dark: #0a0e27;
+            --bg-card: #151c3c;
+            --text-light: #e0e0e0;
+            --text-muted: #999;
+            --success: #00ff88;
+            --error: #ff4444;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: linear-gradient(135deg, var(--bg-dark) 0%, #1a1f3a 100%);
+            color: var(--text-light);
+            overflow: hidden;
+            height: 100vh;
+            position: relative;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 212, 255, 0.03) 0px,
+                rgba(0, 212, 255, 0.03) 1px,
+                transparent 1px,
+                transparent 2px
+            );
+            pointer-events: none;
+            z-index: 1;
+            animation: scanlines 8s linear infinite;
+        }
+
+        @keyframes scanlines {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(10px); }
+        }
+
+        /* === PANTALLA DE INICIO === */
+        .startup-overlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: radial-gradient(circle at center, #1a1f3a 0%, #0a0e27 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            cursor: pointer;
+            transition: opacity 1s ease-in-out;
+        }
+
+        .startup-overlay.fade-out {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .startup-content { text-align: center; }
+
+        .startup-logo {
+            font-size: 100px;
+            margin-bottom: 30px;
+            color: var(--primary);
+            text-shadow: 0 0 30px var(--primary);
+            animation: rotate 4s linear infinite;
+        }
+
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .startup-text {
+            font-size: 48px;
+            letter-spacing: 8px;
+            color: var(--primary);
+            text-shadow: 0 0 20px var(--primary);
+            margin-bottom: 20px;
+            font-weight: bold;
+            animation: textGlow 1.5s ease-in-out infinite;
+        }
+
+        @keyframes textGlow {
+            0%, 100% { text-shadow: 0 0 20px var(--primary); }
+            50% { text-shadow: 0 0 40px var(--primary), 0 0 60px var(--primary); }
+        }
+
+        .startup-subtext {
+            font-size: 14px;
+            color: var(--text-muted);
+            letter-spacing: 4px;
+            margin-bottom: 40px;
+        }
+
+        .startup-loading {
+            width: 300px;
+            height: 4px;
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid var(--primary);
+            margin: 0 auto;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .startup-loading-bar {
+            position: absolute;
+            top: 0; left: 0;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, var(--primary), transparent);
+            animation: loading 2s linear infinite;
+        }
+
+        @keyframes loading {
+            0% { left: -100%; width: 100%; }
+            100% { left: 100%; width: 100%; }
+        }
+
+        .startup-click-prompt {
+            margin-top: 30px;
+            padding: 15px 30px;
+            background: var(--accent);
+            color: white;
+            border-radius: 4px;
+            font-size: 16px;
+            letter-spacing: 2px;
+            animation: pulseClick 1s ease-in-out infinite;
+            display: inline-block;
+            cursor: pointer;
+        }
+
+        @keyframes pulseClick {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 20px rgba(255, 107, 53, 0.5); }
+            50% { transform: scale(1.05); box-shadow: 0 0 40px rgba(255, 107, 53, 0.8); }
+        }
+
+        /* ============================================================ */
+        /* === VISOR DE ESCUCHA ACTIVA - NUEVO === */
+        /* ============================================================ */
+        .voice-visualizer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 0;
+            background: linear-gradient(to top,
+                rgba(255, 68, 68, 0.95) 0%,
+                rgba(255, 68, 68, 0.7) 50%,
+                rgba(255, 68, 68, 0) 100%);
+            z-index: 8000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: height 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            overflow: hidden;
+            backdrop-filter: blur(10px);
+            pointer-events: none;
+        }
+
+        .voice-visualizer.active {
+            height: 280px;
+            pointer-events: auto;
+        }
+
+        .voice-visualizer-inner {
+            text-align: center;
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.5s ease-out 0.2s;
+        }
+
+        .voice-visualizer.active .voice-visualizer-inner {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .voice-mic-icon {
+            font-size: 60px;
+            margin-bottom: 20px;
+            display: inline-block;
+            animation: micShake 0.6s ease-in-out infinite;
+            filter: drop-shadow(0 0 20px rgba(255, 255, 255, 0.8));
+        }
+
+        @keyframes micShake {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.15); }
+        }
+
+        .voice-status-text {
+            font-size: 24px;
+            font-weight: bold;
+            color: white;
+            letter-spacing: 4px;
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+            margin-bottom: 25px;
+        }
+
+        /* Ondas de audio animadas */
+        .voice-waves {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 6px;
+            height: 60px;
+        }
+
+        .voice-wave {
+            width: 6px;
+            background: white;
+            border-radius: 3px;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.7);
+            animation: waveDance 1s ease-in-out infinite;
+        }
+
+        .voice-wave:nth-child(1) { height: 20px; animation-delay: 0s; }
+        .voice-wave:nth-child(2) { height: 35px; animation-delay: 0.1s; }
+        .voice-wave:nth-child(3) { height: 50px; animation-delay: 0.2s; }
+        .voice-wave:nth-child(4) { height: 60px; animation-delay: 0.3s; }
+        .voice-wave:nth-child(5) { height: 50px; animation-delay: 0.4s; }
+        .voice-wave:nth-child(6) { height: 40px; animation-delay: 0.5s; }
+        .voice-wave:nth-child(7) { height: 50px; animation-delay: 0.4s; }
+        .voice-wave:nth-child(8) { height: 60px; animation-delay: 0.3s; }
+        .voice-wave:nth-child(9) { height: 50px; animation-delay: 0.2s; }
+        .voice-wave:nth-child(10) { height: 35px; animation-delay: 0.1s; }
+        .voice-wave:nth-child(11) { height: 20px; animation-delay: 0s; }
+
+        @keyframes waveDance {
+            0%, 100% { transform: scaleY(0.4); }
+            50% { transform: scaleY(1.2); }
+        }
+
+        .voice-timeout-bar {
+            margin-top: 25px;
+            width: 250px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .voice-timeout-fill {
+            height: 100%;
+            background: white;
+            width: 100%;
+            transform-origin: left;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+        }
+
+        .voice-timeout-fill.counting {
+            animation: timeoutCountdown 6s linear forwards;
+        }
+
+        @keyframes timeoutCountdown {
+            from { transform: scaleX(1); }
+            to { transform: scaleX(0); }
+        }
+
+        .voice-instruction {
+            margin-top: 15px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.8);
+            letter-spacing: 2px;
+        }
+
+        /* Anillo de pulso en el botón del micrófono cuando está activo */
+        .btn-mic.listening-active {
+            position: relative;
+            background: var(--error);
+            border-color: var(--error);
+        }
+
+        .btn-mic.listening-active::before,
+        .btn-mic.listening-active::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 100%;
+            height: 100%;
+            border: 2px solid var(--error);
+            border-radius: 4px;
+            transform: translate(-50%, -50%);
+            animation: ringPulse 1.5s ease-out infinite;
+            pointer-events: none;
+        }
+
+        .btn-mic.listening-active::after {
+            animation-delay: 0.75s;
+        }
+
+        @keyframes ringPulse {
+            0% {
+                transform: translate(-50%, -50%) scale(1);
+                opacity: 1;
+            }
+            100% {
+                transform: translate(-50%, -50%) scale(1.8);
+                opacity: 0;
+            }
+        }
+
+        /* === LAYOUT PRINCIPAL === */
+        .container {
+            display: grid;
+            grid-template-columns: 280px 1fr 280px;
+            gap: 20px;
+            padding: 20px;
+            height: 100vh;
+            position: relative;
+            z-index: 2;
+        }
+
+        .sidebar-left, .sidebar-right {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            overflow-y: auto;
+        }
+
+        .logo-section {
+            text-align: center;
+            padding: 30px 20px;
+            border: 2px solid var(--primary);
+            background: linear-gradient(135deg, rgba(0, 212, 255, 0.1) 0%, rgba(0, 212, 255, 0.05) 100%);
+            border-radius: 8px;
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.3), inset 0 0 20px rgba(0, 212, 255, 0.1);
+            animation: glow 2s ease-in-out infinite;
+        }
+
+        @keyframes glow {
+            0%, 100% { box-shadow: 0 0 20px rgba(0, 212, 255, 0.3), inset 0 0 20px rgba(0, 212, 255, 0.1); }
+            50% { box-shadow: 0 0 40px rgba(0, 212, 255, 0.5), inset 0 0 30px rgba(0, 212, 255, 0.2); }
+        }
+
+        .logo-section h1 {
+            font-size: 28px;
+            letter-spacing: 4px;
+            color: var(--primary);
+            text-shadow: 0 0 10px var(--primary);
+            margin-bottom: 10px;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            background: var(--success);
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s ease-in-out infinite;
+            box-shadow: 0 0 10px var(--success);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .status-text {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 10px;
+        }
+
+        .widget {
+            padding: 20px;
+            border: 1px solid var(--primary);
+            background: var(--bg-card);
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.2);
+        }
+
+        .widget-title {
+            font-size: 12px;
+            letter-spacing: 2px;
+            color: var(--primary);
+            text-transform: uppercase;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--primary);
+        }
+
+        .stat {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            font-size: 13px;
+        }
+
+        .stat-label { color: var(--text-muted); }
+        .stat-value { color: var(--primary); font-weight: bold; }
+
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: rgba(0, 212, 255, 0.1);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), var(--accent));
+            width: 65%;
+            animation: progress 3s ease-in-out infinite;
+        }
+
+        @keyframes progress {
+            0%, 100% { width: 65%; }
+            50% { width: 75%; }
+        }
+
+        .main-area {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border: 2px solid var(--primary);
+            background: var(--bg-card);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 0 30px rgba(0, 212, 255, 0.3);
+        }
+
+        .chat-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--primary);
+            background: linear-gradient(90deg, rgba(0, 212, 255, 0.1) 0%, rgba(0, 212, 255, 0.05) 100%);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .chat-header h2 {
+            font-size: 16px;
+            letter-spacing: 2px;
+            color: var(--primary);
+            text-transform: uppercase;
+        }
+
+        .header-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .header-btn {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 11px;
+            letter-spacing: 1px;
+            font-family: inherit;
+        }
+
+        .header-btn:hover { background: #ff8850; }
+
+        .header-btn.secondary {
+            background: transparent;
+            border: 1px solid var(--primary);
+            color: var(--primary);
+        }
+
+        .header-btn.secondary:hover {
+            background: rgba(0, 212, 255, 0.1);
+        }
+
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            scroll-behavior: smooth;
+        }
+
+        .message {
+            display: flex;
+            gap: 10px;
+            animation: messageSlide 0.4s ease-out;
+        }
+
+        @keyframes messageSlide {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user { justify-content: flex-end; }
+
+        .message-content {
+            max-width: 75%;
+            padding: 12px 16px;
+            border-radius: 4px;
+            font-size: 13px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .message.ai .message-content {
+            background: rgba(0, 212, 255, 0.15);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+            border-left: 3px solid var(--primary);
+        }
+
+        .message.user .message-content {
+            background: rgba(255, 107, 53, 0.15);
+            border: 1px solid rgba(255, 107, 53, 0.3);
+            border-left: 3px solid var(--accent);
+        }
+
+        .message.error .message-content {
+            background: rgba(255, 68, 68, 0.15);
+            border: 1px solid rgba(255, 68, 68, 0.3);
+            border-left: 3px solid var(--error);
+            color: #ffaaaa;
+        }
+
+        .typing-indicator {
+            display: flex;
+            gap: 4px;
+            padding: 12px 16px;
+        }
+
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--primary);
+            border-radius: 50%;
+            animation: typingBounce 1.4s infinite;
+        }
+
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typingBounce {
+            0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+            30% { transform: translateY(-8px); opacity: 1; }
+        }
+
+        .input-area {
+            padding: 20px;
+            border-top: 1px solid var(--primary);
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-wrapper {
+            flex: 1;
+            display: flex;
+            gap: 10px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 12px 16px;
+            background: rgba(0, 212, 255, 0.05);
+            border: 1px solid var(--primary);
+            border-radius: 4px;
+            color: var(--text-light);
+            font-family: inherit;
+            font-size: 13px;
+            transition: all 0.3s ease;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            background: rgba(0, 212, 255, 0.1);
+            box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+        }
+
+        input[type="text"]::placeholder { color: var(--text-muted); }
+
+        button {
+            padding: 12px 20px;
+            background: var(--primary);
+            border: 1px solid var(--primary);
+            color: var(--bg-dark);
+            font-family: inherit;
+            font-weight: bold;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            letter-spacing: 1px;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+        }
+
+        button:hover {
+            background: var(--primary-dark);
+            box-shadow: 0 0 15px rgba(0, 212, 255, 0.4);
+            transform: translateY(-2px);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-mic {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+            padding: 12px 16px;
+            font-size: 16px;
+            position: relative;
+        }
+
+        .btn-mic:hover {
+            background: #ff8850;
+            box-shadow: 0 0 15px rgba(255, 107, 53, 0.4);
+        }
+
+        .shortcuts {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .shortcut-btn {
+            padding: 12px;
+            font-size: 11px;
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid var(--primary);
+            color: var(--primary);
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+
+        .shortcut-btn:hover {
+            background: rgba(0, 212, 255, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .event-log {
+            max-height: 250px;
+            overflow-y: auto;
+            font-size: 11px;
+        }
+
+        .event {
+            padding: 8px;
+            margin-bottom: 8px;
+            background: rgba(0, 212, 255, 0.05);
+            border-left: 2px solid var(--success);
+            color: var(--text-muted);
+        }
+
+        .event-time { color: var(--primary); margin-right: 8px; }
+        .error-event { border-left-color: var(--accent); }
+
+        .voice-status {
+            text-align: center;
+            padding: 8px;
+            font-size: 11px;
+            color: var(--text-muted);
+            letter-spacing: 1px;
+        }
+
+        .voice-status.active { color: var(--success); }
+        .voice-status.listening { color: var(--error); font-weight: bold; }
+
+        .voice-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 10px;
+            cursor: pointer;
+        }
+
+        .voice-toggle input[type="checkbox"] { cursor: pointer; }
+
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: rgba(0, 212, 255, 0.05); }
+        ::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--primary-dark); }
+    </style>
+</head>
+<body>
+    <!-- Audio: The Clash - Should I Stay or Should I Go -->
+    <audio id="clash-song" preload="auto">
+        <source src="/clash.mp3" type="audio/mpeg">
+    </audio>
+
+    <!-- VISOR DE ESCUCHA ACTIVA - Aparece cuando JARVIS está escuchando -->
+    <div class="voice-visualizer" id="voice-visualizer">
+        <div class="voice-visualizer-inner">
+            <div class="voice-mic-icon">🎙️</div>
+            <div class="voice-status-text">ESCUCHANDO</div>
+            <div class="voice-waves">
+                <div class="voice-wave"></div>
+                <div class="voice-wave"></div>
+                <div class="voice-wave"></div>
+                <div class="voice-wave"></div>
+                <div class="voice-wave"></div>
+                <div class="voice-wave"></div>
+                <div class="voice-wave"></div>
+                <div class="voice-wave"></div>
+                <div class="voice-wave"></div>
+                <div class="voice-wave"></div>
+                <div class="voice-wave"></div>
+            </div>
+            <div class="voice-timeout-bar">
+                <div class="voice-timeout-fill" id="voice-timeout-fill"></div>
+            </div>
+            <div class="voice-instruction">HABLA AHORA — SE DESACTIVA EN 6 SEGUNDOS DE SILENCIO</div>
+        </div>
+    </div>
+
+    <!-- PANTALLA DE INICIO -->
+    <div class="startup-overlay" id="startup-overlay">
+        <div class="startup-content">
+            <div class="startup-logo">⚙</div>
+            <div class="startup-text">JARVIS</div>
+            <div class="startup-subtext">SISTEMA DE INTELIGENCIA ARTIFICIAL</div>
+            <div class="startup-loading">
+                <div class="startup-loading-bar"></div>
+            </div>
+            <div class="startup-click-prompt" id="startup-click">
+                ▶ HAZ CLIC PARA INICIAR
+            </div>
+        </div>
+    </div>
+
+    <!-- INTERFAZ PRINCIPAL -->
+    <div class="container">
+        <div class="sidebar-left">
+            <div class="logo-section">
+                <h1>⚙ JARVIS</h1>
+                <span class="status-indicator"></span>
+                <span>Sistema Activo</span>
+                <div class="status-text">CONECTADO A CLAUDE</div>
+            </div>
+
+            <div class="widget">
+                <div class="widget-title">Sistema</div>
+                <div class="stat">
+                    <span class="stat-label">Modelo</span>
+                    <span class="stat-value">Haiku 4.5</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Estado</span>
+                    <span class="stat-value" id="api-status">Listo</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill"></div>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Mensajes</span>
+                    <span class="stat-value" id="message-count">0</span>
+                </div>
+            </div>
+
+            <div class="widget">
+                <div class="widget-title">Información</div>
+                <div class="stat">
+                    <span class="stat-label">Hora Local</span>
+                    <span class="stat-value" id="time-display">--:--</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Sesión</span>
+                    <span class="stat-value" id="uptime-display">0m</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Fecha</span>
+                    <span class="stat-value" id="date-display">--/--</span>
+                </div>
+            </div>
+
+            <div class="widget">
+                <div class="widget-title">Configuración Voz</div>
+                <label class="voice-toggle">
+                    <input type="checkbox" id="voice-output" checked>
+                    <span>Respuesta hablada</span>
+                </label>
+                <label class="voice-toggle">
+                    <input type="checkbox" id="continuous-listen" checked>
+                    <span>Escucha continua (recomendado)</span>
+                </label>
+                <div class="voice-status" id="voice-status">Voz lista</div>
+            </div>
+        </div>
+
+        <div class="main-area">
+            <div class="chat-container">
+                <div class="chat-header">
+                    <h2>💬 Conversación</h2>
+                    <div class="header-buttons">
+                        <button class="header-btn secondary" id="clear-chat">🗑 LIMPIAR</button>
+                        <button class="header-btn" id="music-toggle">⏸ PAUSAR MÚSICA</button>
+                    </div>
+                </div>
+                <div class="messages" id="messages">
+                    <div class="message ai">
+                        <div class="message-content">Buenas, Rodrigo. JARVIS en línea. Sistema operativo al cien por ciento. ¿En qué puedo asistirte?</div>
+                    </div>
+                </div>
+                <div class="input-area">
+                    <div class="input-wrapper">
+                        <input type="text" id="message-input" placeholder="Escribe tu mensaje o presiona el micrófono...">
+                        <button id="btn-send">Enviar</button>
+                        <button class="btn-mic" id="btn-mic" title="Activar micrófono (M)">🎙️</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="sidebar-right">
+            <div class="widget">
+                <div class="widget-title">Accesos Rápidos</div>
+                <div class="shortcuts">
+                    <button class="shortcut-btn" onclick="sendCommand('¿Qué tal estás hoy?')">👋 Saludar</button>
+                    <button class="shortcut-btn" onclick="sendCommand('Resúmeme las noticias económicas más relevantes para Chile')">📰 Noticias</button>
+                    <button class="shortcut-btn" onclick="sendCommand('Cuéntame algo interesante de historia o MMA')">🥊 MMA/Historia</button>
+                    <button class="shortcut-btn" onclick="sendCommand('Dame una idea breve para mejorar la adopción de mi equipo comercial')">💼 Trabajo</button>
+                    <button class="shortcut-btn" onclick="sendCommand('Explícame algo curioso sobre el universo')">🌌 Curiosidad</button>
+                    <button class="shortcut-btn" onclick="sendCommand('Necesito una frase motivadora corta')">💪 Motivación</button>
+                </div>
+            </div>
+
+            <div class="widget">
+                <div class="widget-title">Atajos de Teclado</div>
+                <div style="font-size: 11px; line-height: 1.8; color: var(--text-muted);">
+                    <div><span style="color: var(--primary);">Enter</span> — Enviar mensaje</div>
+                    <div><span style="color: var(--primary);">M</span> — Activar/desactivar micrófono</div>
+                    <div><span style="color: var(--primary);">P</span> — Pausar/reanudar música</div>
+                    <div><span style="color: var(--primary);">Esc</span> — Detener voz</div>
+                </div>
+            </div>
+
+            <div class="widget">
+                <div class="widget-title">Registro de Eventos</div>
+                <div class="event-log" id="event-log">
+                    <div class="event">
+                        <span class="event-time">[--:--:--]</span>
+                        Esperando inicio...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // ESTADO GLOBAL
+        // ============================================================
+        const state = {
+            messages: [],
+            isProcessing: false,
+            isListening: false,
+            continuousMode: true,    // Escucha continua activada por defecto
+            voiceOutput: true,
+            sessionStart: Date.now(),
+            messageCount: 0,
+            currentSpeech: null,
+            silenceTimer: null,      // Timer para los 6 segundos de silencio
+            shouldRestart: false,    // Si debe reiniciar la escucha tras una respuesta
+        };
+
+        const SILENCE_TIMEOUT_MS = 6000; // 6 segundos
+
+        // ============================================================
+        // ELEMENTOS DOM
+        // ============================================================
+        const dom = {
+            startupOverlay: document.getElementById('startup-overlay'),
+            messagesDiv: document.getElementById('messages'),
+            messageInput: document.getElementById('message-input'),
+            btnSend: document.getElementById('btn-send'),
+            btnMic: document.getElementById('btn-mic'),
+            eventLog: document.getElementById('event-log'),
+            timeDisplay: document.getElementById('time-display'),
+            uptimeDisplay: document.getElementById('uptime-display'),
+            dateDisplay: document.getElementById('date-display'),
+            musicToggle: document.getElementById('music-toggle'),
+            clearChat: document.getElementById('clear-chat'),
+            apiStatus: document.getElementById('api-status'),
+            messageCountEl: document.getElementById('message-count'),
+            voiceStatus: document.getElementById('voice-status'),
+            voiceOutputCheck: document.getElementById('voice-output'),
+            continuousListenCheck: document.getElementById('continuous-listen'),
+            clashSong: document.getElementById('clash-song'),
+            voiceVisualizer: document.getElementById('voice-visualizer'),
+            voiceTimeoutFill: document.getElementById('voice-timeout-fill'),
+        };
+
+        // ============================================================
+        // SISTEMA DE EVENTOS (registro lateral)
+        // ============================================================
+        function addEvent(message, isError = false) {
+            const time = new Date().toLocaleTimeString('es-CL');
+            const eventDiv = document.createElement('div');
+            eventDiv.className = `event ${isError ? 'error-event' : ''}`;
+            eventDiv.innerHTML = `<span class="event-time">[${time}]</span> ${escapeHtml(message)}`;
+            dom.eventLog.insertBefore(eventDiv, dom.eventLog.firstChild);
+
+            while (dom.eventLog.children.length > 15) {
+                dom.eventLog.removeChild(dom.eventLog.lastChild);
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ============================================================
+        // RELOJ Y FECHA
+        // ============================================================
+        function updateClock() {
+            const now = new Date();
+            dom.timeDisplay.textContent = now.toLocaleTimeString('es-CL');
+            dom.dateDisplay.textContent = now.toLocaleDateString('es-CL', {
+                day: '2-digit', month: '2-digit'
+            });
+
+            const minutes = Math.floor((Date.now() - state.sessionStart) / 1000 / 60);
+            const hours = Math.floor(minutes / 60);
+            dom.uptimeDisplay.textContent = hours > 0
+                ? `${hours}h ${minutes % 60}m`
+                : `${minutes}m`;
+        }
+        updateClock();
+        setInterval(updateClock, 1000);
+
+        // ============================================================
+        // AUTO-SCROLL MEJORADO - Siempre fuerza scroll al final
+        // ============================================================
+        function scrollToBottom() {
+            // Usar requestAnimationFrame para asegurar que el DOM está actualizado
+            requestAnimationFrame(() => {
+                dom.messagesDiv.scrollTop = dom.messagesDiv.scrollHeight;
+                // Doble check: en algunos casos el scroll necesita un segundo intento
+                setTimeout(() => {
+                    dom.messagesDiv.scrollTop = dom.messagesDiv.scrollHeight;
+                }, 50);
+            });
+        }
+
+        // ============================================================
+        // SISTEMA DE MENSAJES
+        // ============================================================
+        function addMessage(text, type = 'ai') {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.innerHTML = `<div class="message-content">${escapeHtml(text)}</div>`;
+            dom.messagesDiv.appendChild(messageDiv);
+
+            scrollToBottom();
+
+            state.messageCount++;
+            dom.messageCountEl.textContent = state.messageCount;
+        }
+
+        function showTypingIndicator() {
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'message ai';
+            typingDiv.id = 'typing-indicator';
+            typingDiv.innerHTML = `
+                <div class="message-content">
+                    <div class="typing-indicator">
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                    </div>
+                </div>
+            `;
+            dom.messagesDiv.appendChild(typingDiv);
+            scrollToBottom();
+        }
+
+        function removeTypingIndicator() {
+            const indicator = document.getElementById('typing-indicator');
+            if (indicator) indicator.remove();
+        }
+
+        // Observer para asegurar que cualquier cambio en messages haga scroll abajo
+        const messagesObserver = new MutationObserver(() => {
+            scrollToBottom();
+        });
+        messagesObserver.observe(dom.messagesDiv, {
+            childList: true,
+            subtree: true,
+            characterData: true
+        });
+
+        // ============================================================
+        // VISOR DE ESCUCHA ACTIVA
+        // ============================================================
+        function showVoiceVisualizer() {
+            dom.voiceVisualizer.classList.add('active');
+            // Reiniciar la barra de timeout
+            dom.voiceTimeoutFill.classList.remove('counting');
+            // Forzar reflow para que la animación se reinicie
+            void dom.voiceTimeoutFill.offsetWidth;
+            dom.voiceTimeoutFill.classList.add('counting');
+        }
+
+        function hideVoiceVisualizer() {
+            dom.voiceVisualizer.classList.remove('active');
+            dom.voiceTimeoutFill.classList.remove('counting');
+        }
+
+        // ============================================================
+        // LLAMADA A LA IA (Backend Vercel → Claude)
+        // ============================================================
+        async function sendMessage(text) {
+            if (!text.trim() || state.isProcessing) return;
+
+            stopSpeech();
+
+            state.messages.push({ role: 'user', content: text });
+            addMessage(text, 'user');
+            addEvent(`Mensaje enviado: "${text.substring(0, 40)}..."`);
+
+            dom.messageInput.value = '';
+            state.isProcessing = true;
+            dom.btnSend.disabled = true;
+            dom.apiStatus.textContent = 'Procesando...';
+            showTypingIndicator();
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ messages: state.messages })
+                });
+
+                removeTypingIndicator();
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `Error ${response.status}`);
+                }
+
+                const data = await response.json();
+                const aiResponse = data.response;
+
+                state.messages.push({ role: 'assistant', content: aiResponse });
+
+                addMessage(aiResponse, 'ai');
+                addEvent('Respuesta recibida de Claude');
+                dom.apiStatus.textContent = 'Listo';
+
+                // Hablar respuesta y luego reactivar escucha si está en modo continuo
+                if (state.voiceOutput) {
+                    speakResponse(aiResponse, () => {
+                        // Callback cuando termina de hablar
+                        if (state.continuousMode) {
+                            setTimeout(() => startListening(), 500);
+                        }
+                    });
+                } else if (state.continuousMode) {
+                    // Si no habla pero está en modo continuo, reactivar igual
+                    setTimeout(() => startListening(), 500);
+                }
+
+            } catch (error) {
+                removeTypingIndicator();
+                console.error('Error:', error);
+                addMessage(`Error de conexión: ${error.message}`, 'error');
+                addEvent(`Error: ${error.message}`, true);
+                dom.apiStatus.textContent = 'Error';
+            } finally {
+                state.isProcessing = false;
+                dom.btnSend.disabled = false;
+            }
+        }
+
+        function sendCommand(command) {
+            sendMessage(command);
+        }
+
+        // ============================================================
+        // SÍNTESIS DE VOZ (JARVIS habla)
+        // ============================================================
+        function speakResponse(text, onEndCallback = null) {
+            if (!window.speechSynthesis) {
+                if (onEndCallback) onEndCallback();
+                return;
+            }
+
+            stopSpeech();
+
+            const cleanText = text
+                .replace(/\*\*/g, '')
+                .replace(/\*/g, '')
+                .replace(/`/g, '')
+                .replace(/#{1,6}\s/g, '');
+
+            const utterance = new SpeechSynthesisUtterance(cleanText);
+            utterance.lang = 'es-ES';
+            utterance.rate = 1.0;
+            utterance.pitch = 0.9;
+            utterance.volume = 0.95;
+
+            const voices = window.speechSynthesis.getVoices();
+            const preferredVoice = voices.find(v =>
+                v.lang.startsWith('es') &&
+                (v.name.includes('Google') ||
+                 v.name.toLowerCase().includes('jorge') ||
+                 v.name.toLowerCase().includes('diego'))
+            ) || voices.find(v => v.lang.startsWith('es'));
+
+            if (preferredVoice) {
+                utterance.voice = preferredVoice;
+            }
+
+            utterance.onstart = () => {
+                dom.voiceStatus.textContent = '🔊 Hablando...';
+                dom.voiceStatus.classList.add('active');
+            };
+
+            utterance.onend = () => {
+                dom.voiceStatus.textContent = 'Voz lista';
+                dom.voiceStatus.classList.remove('active');
+                state.currentSpeech = null;
+                if (onEndCallback) onEndCallback();
+            };
+
+            utterance.onerror = () => {
+                dom.voiceStatus.textContent = 'Voz lista';
+                dom.voiceStatus.classList.remove('active');
+                state.currentSpeech = null;
+                if (onEndCallback) onEndCallback();
+            };
+
+            state.currentSpeech = utterance;
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function stopSpeech() {
+            if (window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+                dom.voiceStatus.textContent = 'Voz lista';
+                dom.voiceStatus.classList.remove('active');
+            }
+        }
+
+        if (window.speechSynthesis) {
+            window.speechSynthesis.onvoiceschanged = () => {
+                window.speechSynthesis.getVoices();
+            };
+        }
+
+        // ============================================================
+        // RECONOCIMIENTO DE VOZ - CONTINUO CON TIMEOUT
+        // ============================================================
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition = null;
+        let manuallyStopped = false; // Para distinguir entre detención manual y por timeout
+
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.lang = 'es-CL';
+            recognition.continuous = true;        // Escucha continua del navegador
+            recognition.interimResults = true;    // Resultados parciales mientras hablas
+            recognition.maxAlternatives = 1;
+
+            recognition.onstart = () => {
+                state.isListening = true;
+                manuallyStopped = false;
+                dom.btnMic.classList.add('listening-active');
+                dom.btnMic.textContent = '🔴';
+                dom.voiceStatus.textContent = '🎙️ Escuchando...';
+                dom.voiceStatus.classList.add('listening');
+                showVoiceVisualizer();
+                addEvent('Micrófono activado — modo continuo');
+
+                // Iniciar timer de silencio
+                resetSilenceTimer();
+            };
+
+            recognition.onresult = (event) => {
+                // Cualquier resultado (parcial o final) reinicia el timer de silencio
+                resetSilenceTimer();
+
+                let finalTranscript = '';
+                let interimTranscript = '';
+
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += transcript;
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+
+                // Si hay un resultado final, enviar mensaje
+                if (finalTranscript.trim()) {
+                    addEvent(`Voz reconocida: "${finalTranscript.trim()}"`);
+                    // Detener temporalmente el reconocimiento mientras procesamos
+                    manuallyStopped = true;
+                    recognition.stop();
+                    sendMessage(finalTranscript.trim());
+                }
+            };
+
+            recognition.onerror = (event) => {
+                // 'no-speech' es normal cuando hay silencio, no es un error real
+                if (event.error === 'no-speech') {
+                    addEvent('Silencio detectado, reiniciando escucha...');
+                } else if (event.error === 'aborted') {
+                    // Detención manual, no es error
+                } else {
+                    addEvent(`Error de voz: ${event.error}`, true);
+                }
+            };
+
+            recognition.onend = () => {
+                state.isListening = false;
+                dom.btnMic.classList.remove('listening-active');
+                dom.btnMic.textContent = '🎙️';
+                dom.voiceStatus.classList.remove('listening');
+                clearSilenceTimer();
+                hideVoiceVisualizer();
+
+                // Si NO fue detenido manualmente y modo continuo activo, reiniciar
+                if (!manuallyStopped && state.continuousMode && !state.isProcessing) {
+                    setTimeout(() => {
+                        if (state.continuousMode && !state.isListening && !state.isProcessing) {
+                            startListening();
+                        }
+                    }, 300);
+                } else {
+                    if (!state.currentSpeech) {
+                        dom.voiceStatus.textContent = 'Voz lista';
+                    }
+                }
+            };
+        } else {
+            addEvent('Tu navegador no soporta reconocimiento de voz', true);
+        }
+
+        function resetSilenceTimer() {
+            clearSilenceTimer();
+
+            // Reiniciar la animación de la barra de timeout
+            dom.voiceTimeoutFill.classList.remove('counting');
+            void dom.voiceTimeoutFill.offsetWidth;
+            dom.voiceTimeoutFill.classList.add('counting');
+
+            state.silenceTimer = setTimeout(() => {
+                addEvent(`Silencio de ${SILENCE_TIMEOUT_MS/1000}s detectado, desactivando micrófono`);
+                manuallyStopped = true;
+                if (recognition && state.isListening) {
+                    recognition.stop();
+                }
+            }, SILENCE_TIMEOUT_MS);
+        }
+
+        function clearSilenceTimer() {
+            if (state.silenceTimer) {
+                clearTimeout(state.silenceTimer);
+                state.silenceTimer = null;
+            }
+        }
+
+        function startListening() {
+            if (!recognition) {
+                addMessage('Tu navegador no soporta reconocimiento de voz. Prueba con Chrome o Edge.', 'error');
+                return;
+            }
+            if (state.isListening || state.isProcessing) return;
+
+            stopSpeech();
+
+            try {
+                manuallyStopped = false;
+                recognition.start();
+            } catch (e) {
+                // Si ya está corriendo, ignoramos el error
+                if (e.message && !e.message.includes('already started')) {
+                    addEvent('Error al activar micrófono: ' + e.message, true);
+                }
+            }
+        }
+
+        function stopListening() {
+            manuallyStopped = true;
+            clearSilenceTimer();
+            if (recognition && state.isListening) {
+                recognition.stop();
+            }
+            hideVoiceVisualizer();
+        }
+
+        // ============================================================
+        // CONTROL DE MÚSICA
+        // ============================================================
+        function playStartupMusic() {
+            dom.clashSong.volume = 0.5;
+            dom.clashSong.play()
+                .then(() => addEvent('🎵 Reproduciendo: The Clash'))
+                .catch(err => addEvent('Error al reproducir música: ' + err.message, true));
+        }
+
+        dom.musicToggle.addEventListener('click', () => {
+            if (dom.clashSong.paused) {
+                if (dom.clashSong.currentTime >= dom.clashSong.duration) {
+                    dom.clashSong.currentTime = 0;
+                }
+                dom.clashSong.play();
+                dom.musicToggle.textContent = '⏸ PAUSAR MÚSICA';
+                addEvent('Música reanudada');
+            } else {
+                dom.clashSong.pause();
+                dom.musicToggle.textContent = '▶ REANUDAR MÚSICA';
+                addEvent('Música pausada');
+            }
+        });
+
+        dom.clashSong.addEventListener('ended', () => {
+            dom.musicToggle.textContent = '🔄 REPETIR MÚSICA';
+        });
+
+        // ============================================================
+        // INICIO
+        // ============================================================
+        function startJarvis() {
+            playStartupMusic();
+            addEvent('Sistema iniciado');
+
+            setTimeout(() => {
+                if (state.voiceOutput) {
+                    speakResponse('Buenas Rodrigo. JARVIS en línea. ¿En qué puedo ayudarte?');
+                }
+            }, 1500);
+
+            setTimeout(() => {
+                dom.startupOverlay.classList.add('fade-out');
+                setTimeout(() => {
+                    dom.startupOverlay.style.display = 'none';
+                }, 1000);
+            }, 3500);
+        }
+
+        dom.startupOverlay.addEventListener('click', startJarvis, { once: true });
+
+        // ============================================================
+        // EVENT LISTENERS
+        // ============================================================
+        dom.btnSend.addEventListener('click', () => sendMessage(dom.messageInput.value));
+
+        dom.messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage(dom.messageInput.value);
+        });
+
+        dom.btnMic.addEventListener('click', () => {
+            if (state.isListening) stopListening();
+            else startListening();
+        });
+
+        dom.clearChat.addEventListener('click', () => {
+            if (confirm('¿Limpiar toda la conversación?')) {
+                state.messages = [];
+                state.messageCount = 0;
+                dom.messageCountEl.textContent = '0';
+                dom.messagesDiv.innerHTML = '';
+                addMessage('Conversación reiniciada. ¿En qué puedo ayudarte ahora?', 'ai');
+                addEvent('Conversación limpiada');
+            }
+        });
+
+        dom.voiceOutputCheck.addEventListener('change', (e) => {
+            state.voiceOutput = e.target.checked;
+            addEvent(`Voz ${state.voiceOutput ? 'activada' : 'desactivada'}`);
+            if (!state.voiceOutput) stopSpeech();
+        });
+
+        dom.continuousListenCheck.addEventListener('change', (e) => {
+            state.continuousMode = e.target.checked;
+            addEvent(`Escucha continua ${state.continuousMode ? 'activada' : 'desactivada'}`);
+            if (!state.continuousMode && state.isListening) {
+                stopListening();
+            }
+        });
+
+        // Atajos de teclado
+        document.addEventListener('keydown', (e) => {
+            if (document.activeElement === dom.messageInput) return;
+
+            if (e.key === 'm' || e.key === 'M') {
+                if (state.isListening) stopListening();
+                else startListening();
+            } else if (e.key === 'p' || e.key === 'P') {
+                dom.musicToggle.click();
+            } else if (e.key === 'Escape') {
+                stopSpeech();
+                if (state.isListening) stopListening();
+            }
+        });
+    </script>
+</body>
+</html>
